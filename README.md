@@ -1,317 +1,783 @@
 # Collaborative Workspace
 
-A multi-tenant, real-time collaborative workspace (boards → lists → tasks) with
-role-based access control. Built for the Full-Stack Developer take-home.
+A multi-tenant, real-time collaborative workspace built with React, TypeScript, Node.js, Express, PostgreSQL, Prisma, Redis, and Socket.IO.
 
-![CI](https://github.com/<your-user>/<your-repo>/actions/workflows/ci.yml/badge.svg)
+The application provides workspace-based isolation, server-side role-based access control, persistent task ordering, real-time collaboration, activity logging, Redis caching, and background job processing.
 
-| | URL |
+## Live Demo
+
+| Service | URL |
 |---|---|
-| Frontend (Vercel) | `<add after deploy>` |
-| Backend API + WebSocket (Render) | `<add after deploy>` — health check: `/health` |
+| Frontend | https://collaborative-workspace-ashen.vercel.app |
+| Backend API | https://collaborative-workspace-01sg.onrender.com |
+| Health Check | https://collaborative-workspace-01sg.onrender.com/health |
 
-**Demo accounts** (same workspace, "Demo Workspace"; password for all: `Password123!`)
+[![CI](https://github.com/prernadangara/collaborative-workspace/actions/workflows/ci.yml/badge.svg)](https://github.com/prernadangara/collaborative-workspace/actions/workflows/ci.yml)
 
-| Role | Email |
-|---|---|
-| Owner | `owner@demo.test` |
-| Admin | `admin@demo.test` |
-| Member | `member@demo.test` |
-| Viewer | `viewer@demo.test` |
+## Demo Accounts
 
-Created by `npm run seed` (idempotent). Run it once against the production DB.
+Both accounts belong to the same `Demo Workspace`.
+
+| Role | Email | Password |
+|---|---|---|
+| Owner | `owner@example.com` | `Owner@123` |
+| Member | `member@example.com` | `Member@123` |
+
+> These accounts are created by `npm run seed`.
 
 ---
 
-## Stack
+## Features
 
-TypeScript everywhere · React (Vite) · Node.js + Express 5 · Socket.IO ·
-PostgreSQL + Prisma 7 · Redis (cache + BullMQ) · Docker · GitHub Actions.
+### Authentication
+
+- Email/password authentication
+- Password hashing with bcrypt
+- Short-lived JWT access tokens
+- Refresh-token rotation
+- Hashed refresh tokens stored in PostgreSQL
+- Refresh-token reuse detection
+- Logout and token revocation
+- Secure httpOnly refresh-token cookie in production
+
+### Multi-Tenancy & RBAC
+
+- Multiple isolated workspaces
+- Owner, Admin, Member, and Viewer roles
+- Server-side permission enforcement
+- Workspace membership checked on protected routes
+- Queries scoped to the caller's workspace
+- Cross-workspace IDOR protection
+
+### Boards, Lists & Tasks
+
+- Boards contain ordered lists
+- Lists contain ordered tasks
+- Task creation, editing, deletion and movement
+- Task assignment
+- Status filtering
+- Label filtering
+- Search with pagination
+- Persistent task ordering
+- Optimistic locking for concurrent edits
+
+### Real-Time Collaboration
+
+Socket.IO is used to synchronize connected clients.
+
+Supported events include:
+
+- Task created
+- Task updated
+- Task moved
+- Task deleted
+- Task assigned
+- List created
+
+Database mutations are committed first and socket events are emitted afterwards, keeping PostgreSQL as the source of truth.
+
+### Activity Logging
+
+Meaningful workspace mutations are recorded with:
+
+- Actor
+- Action
+- Entity
+- Entity ID
+- Workspace
+- Timestamp
+- Metadata
+
+### Redis Caching
+
+Redis is used to cache expensive workspace reads.
+
+Cached paths include:
+
+- Board tree
+- Workspace summary
+
+Cache entries are invalidated when relevant board/list/task mutations occur.
+
+Redis is treated as an optimization rather than a hard dependency. If Redis is temporarily unavailable, database-backed operations continue to work.
+
+### Background Jobs
+
+BullMQ is backed by Redis.
+
+Current jobs include:
+
+- Invite email processing
+- Daily workspace digest
+
+The mailer currently logs email content instead of delivering through an external SMTP provider.
+
+---
 
 ## Architecture
 
+```text
+                    ┌──────────────────────┐
+                    │   React + Vite SPA   │
+                    │   TypeScript         │
+                    └──────────┬───────────┘
+                               │
+                    REST + Socket.IO
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │  Express + Socket.IO │
+                    │      Backend         │
+                    └──────┬───────┬───────┘
+                           │       │
+                 ┌─────────┘       └─────────┐
+                 ▼                           ▼
+        ┌─────────────────┐          ┌──────────────┐
+        │   PostgreSQL    │          │    Redis     │
+        │   Prisma ORM    │          │ Cache + Queue│
+        └─────────────────┘          └──────┬───────┘
+                                            │
+                                            ▼
+                                     ┌──────────────┐
+                                     │    BullMQ    │
+                                     │    Worker    │
+                                     └──────────────┘
 ```
- Browser (React, Vite, dnd-kit)
-    │  REST (axios, Bearer access token; refresh token in httpOnly cookie)
-    │  WebSocket (Socket.IO, JWT in handshake)
-    ▼
- Express API  ──────────────►  PostgreSQL   (source of truth, Prisma)
- Socket.IO server ──────────►  Redis        (response cache)
- BullMQ worker (same process) ► Redis        (job queue)
+
+The deployed backend currently runs the REST API, Socket.IO server, and BullMQ worker in the same Render service.
+
+This keeps deployment simple while allowing the worker to be separated into its own service later if independent scaling becomes necessary.
+
+## Technology Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React, Vite, TypeScript |
+| Backend | Node.js, Express 5, TypeScript |
+| Database | PostgreSQL |
+| ORM | Prisma 7 |
+| Real-time | Socket.IO |
+| Cache | Redis |
+| Background Jobs | BullMQ |
+| Authentication | JWT + bcrypt |
+| Testing | Vitest + Supertest |
+| Containerization | Docker + Docker Compose |
+| CI | GitHub Actions |
+| Frontend Hosting | Vercel |
+| Backend Hosting | Render |
+| Database Hosting | Neon PostgreSQL |
+| Redis Hosting | Render Key Value |
+
+## Data Model
+
+```text
+User
+ │
+ ├── Membership ─── Workspace
+ │                       │
+ │                       ├── Board
+ │                       │    └── List
+ │                       │         └── Task
+ │                       │
+ │                       ├── Label
+ │                       ├── Invite
+ │                       └── ActivityLog
+ │
+ └── RefreshToken
+
+Task
+ ├── assignee → User
+ └── TaskLabel → Label
 ```
 
-One backend process hosts the REST API, the Socket.IO server and the BullMQ
-worker, to keep deployment to a single Render service. The worker is started
-by `startWorker()` and can be split into its own entrypoint to scale
-independently.
+Important design decisions:
 
-### Data model
-
-```
-User ──< Membership >── Workspace ──< Board ──< List ──< Task >──< TaskLabel >── Label
-              │  role                    │                │  assigneeId → User      │
-              │                          └── ActivityLog  └── position, version     └── workspaceId
-User ──< RefreshToken        Workspace ──< Invite
-```
-
-- **Tenancy**: every board, label, invite and activity row hangs off a
-  `Workspace`. Lists and tasks reach it through `Board`. There is no query that
-  reads a task/list without also constraining on the workspace (see below).
-- **Membership** is the join table carrying the `Role` (`OWNER | ADMIN | MEMBER | VIEWER`).
-- **Task.position / List.position** are ordering keys; **Task.version** is an
-  optimistic-lock counter.
-- **ActivityLog** is append-only, indexed on `(workspaceId, createdAt)`.
-- Migrations are versioned in `backend/prisma/migrations`.
-
-## Authentication & token strategy
-
-- Passwords hashed with **bcrypt (cost 12)**.
-- **Access token**: JWT, 15 minutes, sent as `Authorization: Bearer`, held in
-  memory/`localStorage` by the SPA.
-- **Refresh token**: JWT, 7 days, stored in an **httpOnly, Secure (in prod),
-  path-scoped cookie** (`/api/auth/*`) so JavaScript can never read it.
-  Only its **SHA-256 hash** is stored in the database.
-- **Rotation**: every `/auth/refresh` revokes the presented token and issues a
-  new one in a single transaction; the revoke is conditional
-  (`WHERE revokedAt IS NULL`) so two concurrent refreshes can't both succeed.
-- **Reuse detection**: presenting an already-rotated token revokes **all** of
-  that user's refresh tokens (assumes theft).
-- **Revocation**: `/auth/logout` revokes the token and clears the cookie.
-  Access tokens are stateless, so a revoked session's access token stays valid
-  until it expires (≤15 min) — a deliberate trade-off.
-- The socket handshake uses the access token; on expiry the client refreshes
-  via the cookie and reconnects.
-
-**Known trade-off:** the access token is in `localStorage`, so an XSS bug could
-read it (React escapes output and there is no `dangerouslySetInnerHTML`, but the
-risk exists). The high-value credential — the refresh token — is not readable
-by scripts.
-
-## Authorization (RBAC)
-
-Enforced **server-side** in middleware, never only in the UI:
-
-1. `requireAuth` — verifies the access token.
-2. `requireWorkspaceMember` — loads the caller's `Membership` for
-   `:workspaceId` (403 if none) and attaches `req.role`.
-3. `requireRole(...)` — per-route allow-list.
-4. **Service layer** — every lookup is scoped by workspace
-   (`where: { id, list: { board: { workspaceId } } }`), so a valid member of
-   workspace B can't reach workspace A's task by ID (returns 404, tested).
-
-| Capability | Owner | Admin | Member | Viewer |
-|---|:-:|:-:|:-:|:-:|
-| Read boards, tasks, activity, members | ✅ | ✅ | ✅ | ✅ |
-| Create/edit/move/delete tasks, lists, boards, labels | ✅ | ✅ | ✅ | ❌ |
-| Invite members | ✅ | ✅ (Member/Viewer only) | ❌ | ❌ |
-| Change role / remove members | ✅ (anyone but self) | ✅ (Member/Viewer only) | ❌ | ❌ |
-| Grant ADMIN | ✅ | ❌ | ❌ | ❌ |
-| Touch the Owner | ❌ | ❌ | ❌ | ❌ |
-
-The hierarchy rules live in one pure, unit-tested module
-(`src/utils/permissions.ts`). Removing a member also unassigns their tasks and
-evicts their live sockets from the workspace's board rooms.
-
-## Real-time (WebSocket) flow
-
-1. Client connects to Socket.IO with `auth: { token }` — the server verifies the JWT.
-2. Client emits `join-board { workspaceId, boardId }`; the server checks
-   membership **and** that the board belongs to that workspace before
-   `socket.join("board:<id>")`.
-3. Every mutation (create / update / move / delete / assign, list create) is
-   committed to Postgres, **then** broadcast to the room with
-   `emitBoardEvent(boardId, event, payload)`. Events: `task-created`,
-   `task-updated`, `task-moved`, `task-deleted`, `task-assigned`, `list-created`.
-4. Clients update local state from the event — no polling. Measured locally at
-   ~20 ms from HTTP write to another client's event.
-5. Removing a member calls `evictUserFromWorkspace`, so they stop receiving
-   events immediately.
-
-### Concurrency
-
-- **Edits**: `PATCH /tasks/:id` requires the `version` the client last saw;
-  the update is `WHERE id = ? AND version = ?`. A stale write gets **409**.
-- **Ordering**: creating and moving tasks runs in a transaction that takes a
-  row lock on the affected list(s) (`SELECT … FOR UPDATE`, locks acquired in
-  sorted ID order to avoid deadlocks), re-reads the task under the lock, then
-  shifts positions. Tests fire concurrent creates/moves and assert positions
-  stay unique; removing the lock makes those tests fail.
-
-## Caching (Redis)
-
-- `GET /workspaces/:id/boards/:boardId` — the full board tree, TTL 60 s.
-- `GET /workspaces/:id/summary` — dashboard aggregates (several `COUNT`/`GROUP BY`
-  queries), TTL 300 s. The response includes `cached: true|false`.
-- **Invalidation**: every task/list mutation deletes both keys for that
-  workspace/board (`cache.ts`). The TTL is a safety net, not the mechanism.
-- **Failure mode**: Redis is an optimisation, not a dependency. Cache helpers
-  swallow errors, so a Redis outage means slower reads, not 500s.
-  `/health` reports `degraded` instead of failing.
-
-## Background jobs (BullMQ)
-
-Queue `background-jobs`, 3 attempts with exponential backoff:
-
-- **`invite-email`** — enqueued when an invite is created; the worker sends the
-  email (via `lib/mailer.ts`, which logs unless you plug in an SMTP provider),
-  so the HTTP request doesn't wait on delivery. If Redis is unavailable, the
-  enqueue times out after 1.5 s and the email is sent inline instead of hanging.
-- **`daily-digest`** — repeatable job (08:00 daily) that summarises the last 24 h
-  per workspace to each owner.
-
-Why these two: email is the canonical slow, failure-prone side-effect that
-shouldn't block a request, and the digest exercises scheduled work.
-
-## Other behaviour worth knowing
-
-- **Search**: case-insensitive substring match on title/description, plus
-  `status`, `assigneeId`, `labelId` filters, paginated (`page`, `limit ≤ 50`).
-- **Activity log**: task created/updated/moved/assigned/deleted, role changed,
-  member removed, invite created/accepted, workspace created.
-- **Errors**: consistent JSON `{ message }`; unknown routes 404; a final error
-  handler and `unhandledRejection` hook prevent stack traces reaching clients.
+- Workspace membership is represented by a dedicated `Membership` table.
+- Workspace ownership and roles are represented through membership roles.
+- Workspace-related records are scoped to their workspace.
+- Tasks maintain a `version` field for optimistic concurrency control.
+- Tasks and lists maintain ordering positions.
+- Activity logs are associated with a workspace and actor.
+- Prisma migrations are version-controlled under `backend/prisma/migrations`.
 
 ---
 
-## Local setup
+## Multi-Tenancy & Authorization
 
-### Option A — everything in Docker
+Authorization is enforced on the server rather than relying on frontend visibility.
+
+Protected requests pass through the following checks:
+
+```text
+Request
+  │
+  ▼
+requireAuth
+  │
+  ├── Verify JWT
+  │
+  ▼
+requireWorkspaceMember
+  │
+  ├── Find membership for requested workspace
+  ├── Reject non-members
+  └── Attach role to request
+  │
+  ▼
+requireRole
+  │
+  └── Check permitted operation
+  │
+  ▼
+Service Layer
+  │
+  └── Scope database queries to workspace
+```
+
+This prevents a user who belongs to Workspace A from accessing Workspace B's resources by changing an ID in the request.
+
+The permission rules are centralized in a pure, unit-tested permissions module.
+
+### Role Overview
+
+| Capability | Owner | Admin | Member | Viewer |
+|---|:---:|:---:|:---:|:---:|
+| Read workspace data | ✓ | ✓ | ✓ | ✓ |
+| Create/edit/move/delete tasks | ✓ | ✓ | ✓ | — |
+| Create/edit/move/delete lists | ✓ | ✓ | ✓ | — |
+| Create/manage boards | ✓ | ✓ | Limited | — |
+| Invite members | ✓ | ✓ | — | — |
+| Change roles | ✓ | Limited | — | — |
+| Grant Admin role | ✓ | — | — | — |
+
+All important permission checks are enforced through API middleware and the service layer.
+
+---
+
+## Authentication
+
+### Access Token
+
+- JWT
+- 15-minute lifetime
+- Sent using the `Authorization: Bearer <token>` header
+- Used for authenticated API and Socket.IO requests
+
+### Refresh Token
+
+- Longer-lived session token
+- Stored in an httpOnly cookie
+- Secure cookie settings are enabled in production
+- Only a SHA-256 hash is persisted in PostgreSQL
+- Rotated whenever `/auth/refresh` is used
+
+### Refresh Token Reuse
+
+When an already-rotated refresh token is presented again, the user's refresh tokens are revoked. This treats reuse as a potential token-theft signal.
+
+### Logout
+
+Logout revokes the refresh token and clears the cookie.
+
+Access tokens are intentionally stateless and can remain valid until their short lifetime expires.
+
+---
+
+## Real-Time Design
+
+Socket.IO is used for board-level rooms.
+
+```text
+Client
+  │
+  │ connect with JWT
+  ▼
+Socket.IO Server
+  │
+  │ verify authentication
+  │
+  │ verify workspace membership
+  │
+  ▼
+board:<boardId>
+```
+
+For mutations:
+
+```text
+REST request
+     │
+     ▼
+Validate + authorize
+     │
+     ▼
+PostgreSQL transaction
+     │
+     ▼
+Commit
+     │
+     ▼
+Emit Socket.IO event
+     │
+     ▼
+Connected clients update
+```
+
+The database remains the source of truth.
+
+Clients receive the resulting server state rather than treating socket events as an independent data store.
+
+---
+
+## Concurrency & Ordering
+
+### Optimistic Locking
+
+Tasks contain a `version` field.
+
+An update requires the version that the client last received:
+
+```sql
+UPDATE task
+SET ...
+WHERE id = ?
+  AND version = ?
+```
+
+If the version no longer matches, the API returns `409 Conflict`.
+
+This prevents an outdated client from silently overwriting a newer change.
+
+### Task Ordering
+
+Task creation and movement are performed inside database transactions.
+
+Affected list rows are locked before positions are recalculated. Concurrent create/move operations are covered by integration tests to ensure that task positions remain unique and consistent.
+
+---
+
+## Redis Caching
+
+Two read paths use Redis caching:
+
+### Board Tree
+
+```text
+GET /workspaces/:workspaceId/boards/:boardId
+```
+
+TTL: 60 seconds.
+
+### Workspace Summary
+
+```text
+GET /workspaces/:workspaceId/summary
+```
+
+TTL: 300 seconds.
+
+The summary aggregates workspace data using multiple database queries.
+
+Relevant task/list mutations invalidate the affected cache entries.
+
+Redis failures are handled gracefully. Cache failures do not turn otherwise successful database operations into server errors.
+
+---
+
+## Background Processing
+
+BullMQ uses Redis as its queue backend.
+
+### Invite Email
+
+When an invitation is created:
+
+```text
+API request
+    │
+    ▼
+Create invitation
+    │
+    ▼
+Queue invite-email job
+    │
+    ▼
+BullMQ worker
+    │
+    ▼
+Mailer
+```
+
+The current mailer logs the email instead of connecting to an external email provider.
+
+If Redis is unavailable, the application falls back to sending the mail operation inline rather than blocking the request indefinitely.
+
+### Daily Digest
+
+A repeatable BullMQ job generates a daily workspace activity digest.
+
+---
+
+## Search & Filtering
+
+Tasks can be searched and filtered by:
+
+- Title/description text
+- Status
+- Assignee
+- Label
+
+Results are paginated, with a maximum page size enforced by the API.
+
+The current implementation uses case-insensitive substring matching rather than PostgreSQL full-text search.
+
+For significantly larger datasets, PostgreSQL `tsvector` + GIN indexing or `pg_trgm` would be the next optimization.
+
+---
+
+## Project Structure
+
+```text
+collaborative-workspace/
+│
+├── backend/
+│   ├── prisma/
+│   │   ├── migrations/
+│   │   └── schema.prisma
+│   │
+│   └── src/
+│       ├── controllers/
+│       ├── middleware/
+│       ├── routes/
+│       ├── services/
+│       ├── socket.ts
+│       ├── workers/
+│       ├── queues/
+│       ├── lib/
+│       ├── utils/
+│       ├── tests/
+│       └── server.ts
+│
+├── frontend/
+│   └── src/
+│
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+│
+├── docker-compose.yml
+└── README.md
+```
+
+---
+
+## Local Development
+
+### Prerequisites
+
+- Node.js 20+
+- Docker
+- Docker Compose
+- Git
+
+### Option 1: Run Infrastructure with Docker
+
+Start PostgreSQL and Redis:
 
 ```bash
-git clone <repo> && cd <repo>
+docker compose up -d postgres redis
+```
+
+#### Backend
+
+```bash
+cd backend
+npm ci
+cp .env.example .env
+npx prisma migrate deploy
+npm run seed
+npm run dev
+```
+
+Backend: http://localhost:5000
+
+Health check: http://localhost:5000/health
+
+#### Frontend
+
+```bash
+cd frontend
+npm ci
+cp .env.example .env
+npm run dev
+```
+
+Frontend: http://localhost:5173
+
+### Option 2: Docker Compose
+
+The repository includes Docker Compose configuration for the local PostgreSQL, Redis, backend, and frontend environment.
+
+```bash
 docker compose up --build
 ```
 
-- Frontend: <http://localhost:5173> · API: <http://localhost:5000> · health: <http://localhost:5000/health>
-- Migrations run automatically on backend start.
-- Seed the demo accounts from your host against the compose Postgres (the slim
-  production image omits `tsx`, which the seed script needs):
-  ```bash
-  cd backend && npm ci
-  DATABASE_URL=postgresql://workspace_user:workspace_password@localhost:5432/collaborative_workspace npm run seed
-  ```
+The frontend is available at http://localhost:5173
 
-### Option B — infra in Docker, apps on the host (best for development)
-
-```bash
-docker compose up -d postgres redis
-
-cd backend
-cp .env.example .env            # then edit secrets
-npm ci
-npx prisma migrate deploy
-npm run seed
-npm run dev                     # http://localhost:5000
-
-cd ../frontend
-cp .env.example .env
-npm ci
-npm run dev                     # http://localhost:5173
-```
-
-## Environment variables
-
-**Backend** (`backend/.env`)
-
-| Var | Purpose |
-|---|---|
-| `DATABASE_URL` | Postgres connection string |
-| `REDIS_URL` | Redis connection string (`rediss://…` for TLS providers such as Upstash) |
-| `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` | Long random strings, **different from each other** |
-| `CLIENT_URL` | Exact frontend origin, for CORS + Socket.IO CORS (no trailing slash) |
-| `PORT` | Set by Render automatically; defaults to 5000 |
-| `COOKIE_SECURE` | `true` in production |
-| `COOKIE_SAMESITE` | `lax` (same site) or `none` (Vercel → Render, requires Secure) |
-
-**Frontend** (`frontend/.env`, baked in at build time)
-
-| Var | Purpose |
-|---|---|
-| `VITE_API_URL` | Backend URL **including `/api`**, e.g. `https://xyz.onrender.com/api` |
-| `VITE_SOCKET_URL` | Backend origin, e.g. `https://xyz.onrender.com` |
-
-## Testing
-
-```bash
-docker compose up -d postgres redis
-cd backend
-cp .env.example .env
-npm ci && npx prisma migrate deploy
-npm test        # 35 tests: unit (permissions) + integration (auth, isolation, RBAC, tasks, ordering, search, activity, cache)
-npm run lint    # type-check
-cd ../frontend && npm run lint && npm run build
-```
-
-Integration tests create their own users/workspaces through the real API (no
-seed data required) against a real Postgres and Redis. CI (`.github/workflows/ci.yml`)
-runs the same steps with Postgres and Redis service containers on every push.
-
-## Deployment
-
-### 1. Databases
-- **Postgres**: Render managed Postgres, or Neon. Copy the connection string
-  (use the *external* URL if the API is a separate service; add `?sslmode=require` if needed).
-- **Redis**: Render Key Value or Upstash. Copy the `rediss://` URL.
-
-### 2. Backend → Render (Web Service)
-- Root directory: `backend` · Runtime: Node
-- Build command: `npm ci --include=dev && npm run build` (TypeScript and `tsx` are dev dependencies; `--include=dev` keeps the build working even when `NODE_ENV=production` is set)
-- Start command: `npm run start:prod` (runs `prisma migrate deploy`, then the server)
-- Health check path: `/health`
-- Environment: `DATABASE_URL`, `REDIS_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`,
-  `CLIENT_URL=https://<your-app>.vercel.app`, `COOKIE_SECURE=true`, `COOKIE_SAMESITE=none`,
-  `NODE_ENV=production`
-- Seed once via the Render shell: `npm run seed` (needs dev deps; or run it locally with the production `DATABASE_URL`).
-
-### 3. Frontend → Vercel
-- Root directory: `frontend` · Framework: Vite
-- Environment: `VITE_API_URL=https://<render-app>.onrender.com/api`,
-  `VITE_SOCKET_URL=https://<render-app>.onrender.com`
-- **Redeploy after changing env vars** (Vite inlines them at build time).
-- Then update Render's `CLIENT_URL` to the final Vercel URL.
-
-### 4. Verify
-1. `GET <render>/health` → `{"status":"ok"}`.
-2. Log in on the Vercel URL; DevTools → Application → Cookies shows an httpOnly
-   `refreshToken` on the Render domain; Network shows the WebSocket upgrade (101).
-3. Open two browsers as two different users; edit a task in one, see it in the other.
-4. Wait >15 min (or shorten the token TTL) and confirm requests transparently refresh.
-
-Render's free tier sleeps after inactivity; the first request can take ~30–60 s.
+The backend is available at http://localhost:5000
 
 ---
 
-## Trade-offs made & known limitations
+## Environment Variables
 
-- **Cross-site cookies**: Vercel and Render are different sites, so the refresh
-  cookie is `SameSite=None`. Browsers that block third-party cookies (Safari
-  ITP, Chrome Incognito) will fail to refresh and users will re-login every
-  15 minutes. The proper fix is a shared parent domain (e.g. `app.example.com`
-  and `api.example.com`) with `SameSite=Lax`.
-- **Access token in localStorage** (see above).
-- **Search** is `ILIKE`, fine for thousands of tasks; for more, add a
-  `tsvector` column + GIN index (or `pg_trgm`).
-- **Integer positions** shifted in a transaction: correct and simple, but every
-  move rewrites neighbouring rows. Fractional indexing / LexoRank would scale
-  better.
-- **Optimistic-lock conflicts** on edit return 409; there is no field-level merge UI.
-- **Single process** runs API + sockets + worker. Horizontal scaling of Socket.IO
-  needs the Redis adapter (`@socket.io/redis-adapter`).
-- **Email** is logged, not delivered; the invite token is also returned in the
-  API response so invites can be accepted without an inbox.
-- **No rate limiting** on auth endpoints, and no password-strength rules
-  beyond length ≥ 8.
-- **Frontend** is a single large component with minimal styling; there is no
-  in-app UI for registration or for creating workspaces/boards/lists (use the
-  API or the seeded data).
-- Dockerfiles and `docker-compose.yml` were written carefully but **not
-  executed in the authoring environment** — run `docker compose up --build` once
-  before submitting.
+### Backend
 
-## What I'd do next
+Create `backend/.env` from `backend/.env.example`.
 
-Split the worker into its own service, add the Socket.IO Redis adapter,
-presence indicators, rate limiting (per IP + per account) with lockout,
-tsvector search, list/board rename/reorder/delete endpoints, e2e tests with
-Playwright (two browser contexts), a proper UI for workspace/board/list
-management, and refresh-token binding to device/IP metadata.
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `REDIS_URL` | Redis connection string |
+| `JWT_ACCESS_SECRET` | Secret used to sign access tokens |
+| `JWT_REFRESH_SECRET` | Secret used to sign refresh tokens |
+| `CLIENT_URL` | Frontend origin allowed by CORS |
+| `PORT` | Backend port |
+| `COOKIE_SECURE` | Enables Secure cookies in production |
+| `COOKIE_SAMESITE` | Cookie SameSite policy |
+
+### Frontend
+
+Create `frontend/.env` from `frontend/.env.example`.
+
+| Variable | Description |
+|---|---|
+| `VITE_API_URL` | Backend API URL including `/api` |
+| `VITE_SOCKET_URL` | Backend origin used by Socket.IO |
+
+> Never commit real secrets or `.env` files.
+
+---
+
+## Testing
+
+The backend contains both unit and integration tests.
+
+Run the backend test suite:
+
+```bash
+cd backend
+npm test
+```
+
+Current suite: **35 tests**
+
+Coverage includes:
+
+- Permission rules
+- Authentication
+- Refresh-token rotation
+- Logout/revocation
+- Workspace isolation
+- IDOR protection
+- RBAC
+- Task CRUD
+- Validation
+- Task assignment
+- Ordering
+- Concurrent task creation
+- Concurrent task movement
+- Search and filtering
+- Pagination
+- Label isolation
+- Activity logging
+- Redis summary caching
+- Cache invalidation
+- Invitation authorization
+
+Tests use a dedicated test database rather than the development/production database.
+
+---
+
+## CI
+
+GitHub Actions runs automatically on pushes and pull requests.
+
+The backend CI pipeline:
+
+```text
+Install dependencies
+       │
+       ▼
+Generate Prisma client
+       │
+       ▼
+Type-check
+       │
+       ▼
+Apply migrations
+       │
+       ▼
+Run tests
+       │
+       ▼
+Build backend
+```
+
+The frontend pipeline runs:
+
+```text
+Install dependencies
+       │
+       ▼
+Lint
+       │
+       ▼
+Build
+```
+
+Current CI status:
+
+[![CI](https://github.com/prernadangara/collaborative-workspace/actions/workflows/ci.yml/badge.svg)](https://github.com/prernadangara/collaborative-workspace/actions/workflows/ci.yml)
+
+---
+
+## Deployment
+
+### Frontend — Vercel
+
+The frontend is deployed from the `frontend` directory.
+
+Production environment variables:
+
+```env
+VITE_API_URL=https://collaborative-workspace-01sg.onrender.com/api
+VITE_SOCKET_URL=https://collaborative-workspace-01sg.onrender.com
+```
+
+### Backend — Render
+
+The backend is deployed from the `backend` directory using Docker.
+
+The production service runs:
+
+- REST API
+- Socket.IO server
+- BullMQ worker
+
+Important production variables include:
+
+```env
+DATABASE_URL=
+REDIS_URL=
+JWT_ACCESS_SECRET=
+JWT_REFRESH_SECRET=
+CLIENT_URL=
+COOKIE_SECURE=true
+COOKIE_SAMESITE=none
+NODE_ENV=production
+```
+
+Database migrations are applied when the production backend starts.
+
+### Production Verification
+
+The deployed application has been verified for:
+
+- Authentication
+- Workspace loading
+- Task creation
+- Task movement
+- Search
+- Status filtering
+- Cross-client Socket.IO updates
+- Member RBAC restrictions
+
+Health endpoint: https://collaborative-workspace-01sg.onrender.com/health
+
+---
+
+## Security Considerations
+
+The application includes:
+
+- bcrypt password hashing
+- Short-lived access tokens
+- Refresh-token rotation
+- Refresh-token hashing in the database
+- Refresh-token reuse detection
+- httpOnly refresh-token cookies
+- Server-side RBAC
+- Workspace-scoped database queries
+- Cross-workspace IDOR protection
+- Request validation
+- Consistent API error responses
+- Helmet security headers
+- CORS configuration
+- Payload size limits
+
+The access token is currently stored client-side, which means an XSS vulnerability could expose it. The refresh token remains protected by the httpOnly cookie.
+
+---
+
+## Known Limitations & Trade-offs
+
+This project was built under a fixed take-home timeline, so several areas are deliberately documented rather than hidden.
+
+### Search
+
+Current search uses case-insensitive substring matching.
+
+For a larger dataset, PostgreSQL full-text search or trigram indexes would be more appropriate.
+
+### Ordering
+
+Task ordering uses integer positions and transactional position updates.
+
+This is straightforward and reliable for the current scale, but fractional indexing or LexoRank would reduce the number of rows rewritten during large boards.
+
+### Real-Time Scaling
+
+The API, Socket.IO server, and worker currently run in one backend process.
+
+Horizontal Socket.IO scaling would require the Socket.IO Redis adapter and separate worker deployment.
+
+### Email
+
+Invite emails are currently logged rather than delivered through a production SMTP provider.
+
+The invite token is also exposed through the API so the invitation flow can be demonstrated without requiring an email provider.
+
+### Authentication
+
+There is currently no rate limiting or account lockout mechanism on authentication endpoints.
+
+### UI Scope
+
+The frontend focuses on the core collaborative workspace experience. Workspace/board/list creation and some administration operations can be performed through the API rather than dedicated UI screens.
+
+### Conflict Resolution
+
+Optimistic locking detects stale task edits and returns `409 Conflict`, but there is no field-level merge interface.
+
+---
+
+## Future Improvements
+
+With additional development time, I would:
+
+- Add PostgreSQL full-text search with `tsvector`/GIN indexes.
+- Introduce LexoRank or fractional indexing for large boards.
+- Split the BullMQ worker into an independently scalable service.
+- Add the Socket.IO Redis adapter for horizontal scaling.
+- Add authentication rate limiting and account lockout.
+- Add Playwright end-to-end tests using multiple browser contexts.
+- Add richer workspace/board/list management UI.
+- Add presence indicators.
+- Add field-level conflict resolution.
+- Integrate a real transactional email provider.
+
+---
+
+## License
+
+This project was created as a technical take-home assignment.
