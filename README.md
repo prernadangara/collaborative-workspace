@@ -9,8 +9,8 @@ The application provides workspace-based isolation, server-side role-based acces
 | Service | URL |
 |---|---|
 | Frontend | https://collaborative-workspace-ashen.vercel.app |
-| Backend API | https://collaborative-workspace-01sg.onrender.com |
-| Health Check | https://collaborative-workspace-01sg.onrender.com/health |
+| Backend API | https://collaborative-workspace-o1sg.onrender.com |
+| Health Check | https://collaborative-workspace-o1sg.onrender.com/health |
 
 [![CI](https://github.com/prernadangara/collaborative-workspace/actions/workflows/ci.yml/badge.svg)](https://github.com/prernadangara/collaborative-workspace/actions/workflows/ci.yml)
 
@@ -650,8 +650,8 @@ The frontend is deployed from the `frontend` directory.
 Production environment variables:
 
 ```env
-VITE_API_URL=https://collaborative-workspace-01sg.onrender.com/api
-VITE_SOCKET_URL=https://collaborative-workspace-01sg.onrender.com
+VITE_API_URL=https://collaborative-workspace-o1sg.onrender.com/api
+VITE_SOCKET_URL=https://collaborative-workspace-o1sg.onrender.com
 ```
 
 ### Backend — Render
@@ -692,7 +692,7 @@ The deployed application has been verified for:
 - Cross-client Socket.IO updates
 - Member RBAC restrictions
 
-Health endpoint: https://collaborative-workspace-01sg.onrender.com/health
+Health endpoint: https://collaborative-workspace-o1sg.onrender.com/health
 
 ---
 
