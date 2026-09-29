@@ -43,6 +43,12 @@ export async function createTask(
                 description: description?.trim() || null,
                 listId,
                 position: lastTask ? lastTask.position + 1 : 1,
+                status:
+                    list.name === "To Do"
+                        ? "TODO"
+                        : list.name === "In Progress"
+                            ? "IN_PROGRESS"
+                            : "DONE",
             },
         });
     });
