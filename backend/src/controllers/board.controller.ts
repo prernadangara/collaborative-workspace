@@ -3,6 +3,7 @@ import {
   createBoard,
   getBoard,
   getWorkspaceBoards,
+  getWorkspaceSummary,
 } from "../services/board.service";
 
 interface WorkspaceRequest extends Request {
@@ -97,6 +98,23 @@ export async function list(req: Request, res: Response) {
     const boards = await getWorkspaceBoards(workspaceId);
 
     return res.status(200).json({ boards });
+  } catch {
+    return res.status(500).json({
+      message: "Something went wrong",
+    });
+  }
+}
+export async function summary(req: WorkspaceRequest, res: Response) {
+  try {
+    if (!req.workspaceId) {
+      return res.status(400).json({
+        message: "Workspace ID is required",
+      });
+    }
+
+    const result = await getWorkspaceSummary(req.workspaceId);
+
+    return res.status(200).json(result);
   } catch {
     return res.status(500).json({
       message: "Something went wrong",

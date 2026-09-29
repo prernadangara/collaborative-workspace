@@ -23,6 +23,10 @@ export async function verifyWorkspaceAccess(
   workspaceId: string,
   boardId?: string
 ) {
+  if (typeof workspaceId !== "string" || (boardId && typeof boardId !== "string")) {
+    throw new Error("Invalid payload");
+  }
+
   const membership = await prisma.membership.findUnique({
     where: {
       userId_workspaceId: {

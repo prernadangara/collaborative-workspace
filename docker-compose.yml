@@ -1,7 +1,10 @@
+# `docker compose up --build` runs the whole stack:
+#   frontend  http://localhost:5173
+#   backend   http://localhost:5000  (REST + Socket.IO + BullMQ worker)
+#   postgres  localhost:5432, redis localhost:6379
 services:
   postgres:
     image: postgres:16
-    container_name: collaborative-workspace-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: workspace_user
@@ -11,13 +14,55 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workspace_user -d collaborative_workspace"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   redis:
     image: redis:7
-    container_name: collaborative-workspace-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: "5000"
+      DATABASE_URL: postgresql://workspace_user:workspace_password@postgres:5432/collaborative_workspace?schema=public
+      REDIS_URL: redis://redis:6379
+      # Dev-only secrets. Use long random values anywhere real.
+      JWT_ACCESS_SECRET: dev-access-secret-change-me
+      JWT_REFRESH_SECRET: dev-refresh-secret-change-me
+      CLIENT_URL: http://localhost:5173
+      COOKIE_SECURE: "false"
+      COOKIE_SAMESITE: lax
+    ports:
+      - "5000:5000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:5000/api
+        VITE_SOCKET_URL: http://localhost:5000
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
 
 volumes:
   postgres_data:

@@ -5,10 +5,13 @@
   "main": "index.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
+    "build": "prisma generate && tsc",
     "start": "node dist/server.js",
+    "start:prod": "prisma migrate deploy && node dist/server.js",
+    "lint": "tsc --noEmit",
     "test": "vitest run",
-    "postinstall": "prisma skills sync || exit 0"
+    "seed": "tsx src/seed.ts",
+    "prisma:generate": "prisma generate"
   },
   "keywords": [],
   "author": "",

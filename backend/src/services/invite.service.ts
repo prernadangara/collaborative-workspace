@@ -2,12 +2,21 @@ import crypto from "crypto";
 import prisma from "../lib/prisma";
 import { hashToken } from "../utils/token";
 import { createActivityLog } from "./activity.service";
+import { enqueue } from "../queues/task.queue";
+import { sendMail } from "../lib/mailer";
+import { canInviteAs, type Role } from "../utils/permissions";
+import { ForbiddenError } from "./member.service";
 
 export async function createInvite(
   workspaceId: string,
   email: string,
-  role: "ADMIN" | "MEMBER" | "VIEWER"
+  role: "ADMIN" | "MEMBER" | "VIEWER",
+  actor: { userId: string; role: Role }
 ) {
+  if (!canInviteAs(actor.role, role)) {
+    throw new ForbiddenError("You cannot invite someone with that role");
+  }
+
   const normalizedEmail = email.trim().toLowerCase();
 
   const user = await prisma.user.findUnique({
@@ -44,6 +53,43 @@ export async function createInvite(
       expiresAt,
     },
   });
+
+  const [workspace, inviter] = await Promise.all([
+    prisma.workspace.findUnique({ where: { id: workspaceId } }),
+    prisma.user.findUnique({ where: { id: actor.userId } }),
+  ]);
+
+  await createActivityLog(
+    workspaceId,
+    actor.userId,
+    "INVITE_CREATED",
+    "INVITE",
+    invite.id,
+    { email: normalizedEmail, role }
+  );
+
+  // Email delivery happens in the background worker, not in this request.
+  const job = {
+    inviteId: invite.id,
+    email: normalizedEmail,
+    workspaceName: workspace?.name ?? "a workspace",
+    inviterName: inviter?.name ?? "A teammate",
+    role,
+    token: rawToken,
+  };
+
+  const queued = await enqueue("invite-email", job);
+
+  if (!queued) {
+    // Queue unavailable: degrade to sending inline rather than dropping the email.
+    await sendMail(
+      job.email,
+      `${job.inviterName} invited you to ${job.workspaceName}`,
+      `You were invited as ${job.role}. Invite token: ${job.token}`
+    ).catch((error) =>
+      console.error("[invite] inline email failed:", (error as Error).message)
+    );
+  }
 
   return {
     id: invite.id,

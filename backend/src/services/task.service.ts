@@ -1,8 +1,11 @@
 import prisma from "../lib/prisma";
-import redis from "../lib/redis";
+import { cacheDel, boardCacheKey, summaryCacheKey } from "../lib/cache";
 import { createActivityLog } from "./activity.service";
 import { emitBoardEvent } from "../socket-events";
-import taskQueue from "../queues/task.queue";
+
+async function invalidate(workspaceId: string, boardId: string) {
+    await cacheDel(boardCacheKey(workspaceId, boardId), summaryCacheKey(workspaceId));
+}
 
 export async function createTask(
     listId: string,
@@ -24,31 +27,27 @@ export async function createTask(
         throw new Error("List not found");
     }
 
-    const lastTask = await prisma.task.findFirst({
-        where: {
-            listId,
-        },
-        orderBy: {
-            position: "desc",
-        },
+    // Serialise concurrent creates in the same list: lock the parent row,
+    // then compute the next position inside the same transaction.
+    const task = await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "List" WHERE id = ${listId} FOR UPDATE`;
+
+        const lastTask = await tx.task.findFirst({
+            where: { listId },
+            orderBy: { position: "desc" },
+        });
+
+        return tx.task.create({
+            data: {
+                title: title.trim(),
+                description: description?.trim() || null,
+                listId,
+                position: lastTask ? lastTask.position + 1 : 1,
+            },
+        });
     });
 
-    const position = lastTask
-        ? lastTask.position + 1
-        : 1;
-
-    const task = await prisma.task.create({
-        data: {
-            title: title.trim(),
-            description: description?.trim() || null,
-            listId,
-            position,
-        },
-    });
-
-    await redis.del(
-        `workspace:${workspaceId}:board:${list.boardId}`
-    );
+    await invalidate(workspaceId, list.boardId);
 
     if (userId) {
         await createActivityLog(
@@ -59,10 +58,6 @@ export async function createTask(
             task.id
         );
     }
-    await taskQueue.add("task-created", {
-        taskId: task.id,
-        workspaceId,
-    });
     emitBoardEvent(
         list.boardId,
         "task-created",
@@ -130,9 +125,7 @@ export async function updateTask(
         },
     });
 
-    await redis.del(
-        `workspace:${workspaceId}:board:${task.list.boardId}`
-    );
+    await invalidate(workspaceId, task.list.boardId);
 
     if (userId) {
         await createActivityLog(
@@ -181,9 +174,7 @@ export async function deleteTask(
         },
     });
 
-    await redis.del(
-        `workspace:${workspaceId}:board:${task.list.boardId}`
-    );
+    await invalidate(workspaceId, task.list.boardId);
 
     if (userId) {
         await createActivityLog(
@@ -316,7 +307,24 @@ export async function moveTask(
     }
 
     const updatedTask = await prisma.$transaction(async (tx) => {
-        const oldListId = task.listId;
+        const lockIds = [...new Set([task.listId, targetListId])].sort();
+        for (const id of lockIds) {
+            await tx.$queryRaw`SELECT id FROM "List" WHERE id = ${id} FOR UPDATE`;
+        }
+
+        // Re-read under the lock: the position read above may be stale.
+        const current = await tx.task.findUnique({ where: { id: taskId } });
+        if (!current) {
+            throw new Error("Task not found");
+        }
+
+        if (current.listId !== task.listId) {
+            // Someone moved this task to another list while we were waiting.
+            throw new Error("Task version conflict");
+        }
+
+        const oldListId = current.listId;
+        task.position = current.position;
 
         if (oldListId === targetListId) {
             if (targetPosition < task.position) {
@@ -400,9 +408,7 @@ export async function moveTask(
         });
     });
 
-    await redis.del(
-        `workspace:${workspaceId}:board:${task.list.boardId}`
-    );
+    await invalidate(workspaceId, task.list.boardId);
 
     if (userId) {
         await createActivityLog(
@@ -472,9 +478,7 @@ export async function assignTask(
         },
     });
 
-    await redis.del(
-        `workspace:${workspaceId}:board:${task.list.boardId}`
-    );
+    await invalidate(workspaceId, task.list.boardId);
 
     if (userId) {
         await createActivityLog(

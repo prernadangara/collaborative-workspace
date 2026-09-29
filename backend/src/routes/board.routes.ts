@@ -3,6 +3,7 @@ import {
     create,
     getOne,
     list,
+    summary,
 } from "../controllers/board.controller";
 import { requireAuth } from "../middleware/auth.middleware";
 import {
@@ -11,6 +12,13 @@ import {
 } from "../middleware/workspace.middleware";
 
 const router = Router();
+
+router.get(
+  "/workspaces/:workspaceId/summary",
+  requireAuth,
+  requireWorkspaceMember,
+  summary
+);
 
 router.post(
     "/workspaces/:workspaceId/boards",

@@ -2,6 +2,7 @@ import prisma from "../lib/prisma";
 import { hashToken } from "../utils/token";
 import { Request, Response } from "express";
 import { loginUser, refreshAccessToken, registerUser } from "../services/auth.service";
+import { REFRESH_COOKIE, REFRESH_MAX_AGE_MS, refreshCookieOptions } from "../utils/cookies";
 
 export async function register(req: Request, res: Response) {
     try {
@@ -10,6 +11,24 @@ export async function register(req: Request, res: Response) {
         if (!name || !email || !password) {
             return res.status(400).json({
                 message: "Name, email and password are required",
+            });
+        }
+
+        if (
+            typeof name !== "string" ||
+            typeof email !== "string" ||
+            typeof password !== "string"
+        ) {
+            return res.status(400).json({ message: "Invalid input" });
+        }
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ message: "Invalid email address" });
+        }
+
+        if (password.length < 8 || password.length > 128) {
+            return res.status(400).json({
+                message: "Password must be between 8 and 128 characters",
             });
         }
 
@@ -47,11 +66,9 @@ export async function login(req: Request, res: Response) {
 
         const user = await loginUser(email, password);
 
-        res.cookie("refreshToken", user.refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+        res.cookie(REFRESH_COOKIE, user.refreshToken, {
+            ...refreshCookieOptions(),
+            maxAge: REFRESH_MAX_AGE_MS,
         });
 
         return res.status(200).json({
@@ -76,7 +93,7 @@ export async function login(req: Request, res: Response) {
 }
 export async function refresh(req: Request, res: Response) {
     try {
-        const refreshToken = req.cookies.refreshToken;
+        const refreshToken = req.cookies?.[REFRESH_COOKIE];
 
         if (!refreshToken) {
             return res.status(401).json({
@@ -86,11 +103,9 @@ export async function refresh(req: Request, res: Response) {
 
         const result = await refreshAccessToken(refreshToken);
 
-        res.cookie("refreshToken", result.refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            maxAge: 7 * 24 * 60 * 60 * 1000,
+        res.cookie(REFRESH_COOKIE, result.refreshToken, {
+            ...refreshCookieOptions(),
+            maxAge: REFRESH_MAX_AGE_MS,
         });
 
         return res.status(200).json({
@@ -112,9 +127,10 @@ export async function refresh(req: Request, res: Response) {
     }
 }
 export async function logout(req: Request, res: Response) {
-  const refreshToken = req.cookies.refreshToken;
+  const refreshToken = req.cookies?.[REFRESH_COOKIE];
 
   if (refreshToken) {
+   try {
     const tokenHash = hashToken(refreshToken);
 
     await prisma.refreshToken.updateMany({
@@ -126,13 +142,12 @@ export async function logout(req: Request, res: Response) {
         revokedAt: new Date(),
       },
     });
+   } catch (error) {
+     console.error("logout: could not revoke token", (error as Error).message);
+   }
   }
 
-  res.clearCookie("refreshToken", {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-  });
+  res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
 
   return res.status(200).json({
     message: "Logged out successfully",

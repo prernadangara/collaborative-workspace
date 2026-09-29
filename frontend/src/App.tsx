@@ -359,12 +359,14 @@ function App() {
     const token = localStorage.getItem("accessToken");
 
     if (token) {
-      socket.auth = {
-        token,
-      };
-
+      socket.auth = { token };
       socket.connect();
-      loadWorkspaces();
+
+      const timeoutId = window.setTimeout(() => {
+        void loadWorkspaces();
+      }, 0);
+
+      return () => window.clearTimeout(timeoutId);
     }
   }, []);
 

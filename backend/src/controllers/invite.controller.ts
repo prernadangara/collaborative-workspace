@@ -26,7 +26,11 @@ export async function create(req: Request, res: Response) {
     const invite = await createInvite(
       workspaceId,
       email,
-      role || "MEMBER"
+      role || "MEMBER",
+      {
+        userId: req.userId!,
+        role: req.role!,
+      }
     );
 
     return res.status(201).json(invite);
