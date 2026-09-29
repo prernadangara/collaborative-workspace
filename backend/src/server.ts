@@ -148,7 +148,7 @@ process.on("unhandledRejection", (reason) => {
 });
 
 if (process.env.NODE_ENV !== "test") {
-  httpServer.listen(PORT, () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server listening on port ${PORT}`);
   });
 
