@@ -295,11 +295,9 @@ function App() {
           ...currentBoard,
           lists: currentBoard.lists.map((list) => ({
             ...list,
-            tasks: list.tasks.filter((task) =>
-              matchingTasks.some(
-                (matchingTask: Task) =>
-                  matchingTask.id === task.id
-              )
+            tasks: matchingTasks.filter(
+              (matchingTask: Task) =>
+                matchingTask.listId === list.id
             ),
           })),
         };
