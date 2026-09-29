@@ -401,6 +401,12 @@ export async function moveTask(
             data: {
                 listId: targetListId,
                 position: targetPosition,
+                status:
+                    targetList.name === "To Do"
+                        ? "TODO"
+                        : targetList.name === "In Progress"
+                            ? "IN_PROGRESS"
+                            : "DONE",
                 version: {
                     increment: 1,
                 },
