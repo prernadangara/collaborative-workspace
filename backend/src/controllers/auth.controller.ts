@@ -77,6 +77,8 @@ export async function login(req: Request, res: Response) {
             accessToken: user.accessToken,
         });
     } catch (error) {
+        console.error("LOGIN ERROR:", error);
+
         if (
             error instanceof Error &&
             error.message === "Invalid email or password"
@@ -127,29 +129,29 @@ export async function refresh(req: Request, res: Response) {
     }
 }
 export async function logout(req: Request, res: Response) {
-  const refreshToken = req.cookies?.[REFRESH_COOKIE];
+    const refreshToken = req.cookies?.[REFRESH_COOKIE];
 
-  if (refreshToken) {
-   try {
-    const tokenHash = hashToken(refreshToken);
+    if (refreshToken) {
+        try {
+            const tokenHash = hashToken(refreshToken);
 
-    await prisma.refreshToken.updateMany({
-      where: {
-        tokenHash,
-        revokedAt: null,
-      },
-      data: {
-        revokedAt: new Date(),
-      },
+            await prisma.refreshToken.updateMany({
+                where: {
+                    tokenHash,
+                    revokedAt: null,
+                },
+                data: {
+                    revokedAt: new Date(),
+                },
+            });
+        } catch (error) {
+            console.error("logout: could not revoke token", (error as Error).message);
+        }
+    }
+
+    res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
+
+    return res.status(200).json({
+        message: "Logged out successfully",
     });
-   } catch (error) {
-     console.error("logout: could not revoke token", (error as Error).message);
-   }
-  }
-
-  res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
-
-  return res.status(200).json({
-    message: "Logged out successfully",
-  });
 }
