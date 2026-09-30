@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -10,7 +10,7 @@ import {
 import type { DragEndEvent } from "@dnd-kit/core";
 import api from "./api";
 import socket from "./socket";
-
+import logo from "./assets/collaborative-workspace-logo.png";
 
 interface Task {
   id: string;
@@ -108,11 +108,14 @@ function DroppableList({
   return (
     <div
       ref={setNodeRef}
+      className="kanban-column"
       style={{
-        minHeight: "100px",
         border: isOver
-          ? "2px dashed black"
-          : "2px solid transparent",
+          ? "2px dashed var(--accent)"
+          : "1px solid var(--border)",
+        background: isOver
+          ? "var(--accent-bg)"
+          : undefined,
       }}
     >
       {children}
@@ -120,10 +123,123 @@ function DroppableList({
   );
 }
 
+function ActivityIcon({ action }: { action: string }) {
+  if (action === "TASK_DELETED") {
+    return (
+      <svg
+        className="activity-icon activity-icon-delete"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M3 6h18" />
+        <path d="M8 6V4h8v2" />
+        <path d="M19 6l-1 14H6L5 6" />
+        <path d="M10 11v5" />
+        <path d="M14 11v5" />
+      </svg>
+    );
+  }
+
+  if (action === "TASK_CREATED") {
+    return (
+      <svg
+        className="activity-icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <path d="m16 9-5.5 5.5L8 12" />
+      </svg>
+    );
+  }
+
+  if (action === "TASK_UPDATED") {
+    return (
+      <svg
+        className="activity-icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.924a.5.5 0 0 0 .61.61l4.924-1.32a2 2 0 0 0 .83-.5z" />
+        <path d="m15 5 4 4" />
+      </svg>
+    );
+  }
+
+  // TASK_MOVED
+  return (
+    <svg
+      className="activity-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 19L19 5" />
+      <path d="M10 5h9v9" />
+    </svg>
+  );
+}
+
+function StatusIcon({ type }: { type: "success" | "error" }) {
+  if (type === "success") {
+    return (
+      <svg
+        className="status-icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M20 6 9 17l-5-5" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      className="status-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="m15 9-6 6" />
+      <path d="m9 9 6 6" />
+    </svg>
+  );
+}
+
 function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error">("success");
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedBoard, setSelectedBoard] = useState<Board | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -135,6 +251,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
   const [labelFilter, setLabelFilter] = useState("");
+  const statusMessageRef = useRef<HTMLParagraphElement>(null);
 
   const [labels, setLabels] = useState<
     { id: string; name: string }[]
@@ -150,6 +267,11 @@ function App() {
 
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+
+    console.log("DRAG RESULT:", {
+      active: active.id,
+      over: over?.id,
+    });
 
     if (!over || !selectedBoard) {
       return;
@@ -532,11 +654,18 @@ function App() {
   }, []);
 
   return (
-    <div>
-      <h1>Collaborative Workspace</h1>
+    <div className="app-shell">
+      <div className="brand-header">
+        <img
+          src={logo}
+          alt="Collaborative Workspace"
+          className="brand-logo"
+        />
+        <h1 className="app-title">Collaborative Workspace</h1>
+      </div>
 
       {!localStorage.getItem("accessToken") && (
-        <form onSubmit={handleLogin}>
+        <form className="login-form" onSubmit={handleLogin}>
           <input
             type="email"
             placeholder="Email"
@@ -559,21 +688,30 @@ function App() {
         </form>
       )}
 
-      {message && <p>{message}</p>}
-
       {workspaces.length > 0 && (
         <div>
-          <h2>Your Workspaces</h2>
+          <h2 className="section-title">Your Workspaces</h2>
 
-          {workspaces.map((workspace) => (
-            <div key={workspace.id}>
-              <button
-                onClick={() => loadBoard(workspace.id)}
+          <div className="workspace-selector">
+            {workspaces.map((workspace) => (
+              <div key={workspace.id}>
+                <button
+                  onClick={() => loadBoard(workspace.id)}
+                >
+                  {workspace.name}
+                </button>
+              </div>
+            ))}
+            {message && (
+              <p
+                ref={statusMessageRef}
+                className={`status-message ${messageType}`}
               >
-                {workspace.name}
-              </button>
-            </div>
-          ))}
+                <StatusIcon type={messageType} />
+                <span>{message}</span>
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -581,9 +719,10 @@ function App() {
         <DndContext
           sensors={sensors}
           onDragEnd={handleDragEnd}
+          autoScroll={false}
         >
-          <div>
-            <div>
+          <div className="board-content">
+            <div className="toolbar">
               <input
                 type="text"
                 placeholder="Search tasks..."
@@ -639,33 +778,55 @@ function App() {
               </button>
             </div>
 
-            <button
-              onClick={() =>
-                loadActivity(selectedBoard.workspaceId)
-              }
-            >
-              View Activity
-            </button>
+            <div className="board-header">
+              <div>
+                <h2 className="board-title">{selectedBoard.name}</h2>
+                <p className="board-subtitle">
+                  Manage tasks and track progress
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  if (showActivity) {
+                    setShowActivity(false);
+                  } else {
+                    loadActivity(selectedBoard.workspaceId);
+                  }
+                }}
+              >
+                {showActivity ? "Hide Activity" : "View Activity"}
+              </button>
+            </div>
 
             {showActivity && (
-              <div>
+              <div className="activity-panel">
                 <h3>Recent Activity</h3>
 
                 {activityLogs.length === 0 ? (
                   <p>No activity found.</p>
                 ) : (
                   activityLogs.map((log) => (
-                    <div key={log.id}>
-                      <strong>{log.action}</strong>
-                      <span>
-                        {" "}
-                        — {log.entityType}
-                      </span>
+                    <div className="activity-item" key={log.id}>
+                      <ActivityIcon action={log.action} />
+
+                      <div className="activity-content">
+                        <strong>
+                          {log.action === "TASK_MOVED"
+                            ? "Task moved"
+                            : log.action === "TASK_DELETED"
+                              ? "Task deleted"
+                              : log.action === "TASK_CREATED"
+                                ? "Task created"
+                                : log.action === "TASK_UPDATED"
+                                  ? "Task updated"
+                                  : log.action}
+                        </strong>
+
+                      </div>
+
                       <small>
-                        {" "}
-                        {new Date(
-                          log.createdAt
-                        ).toLocaleString()}
+                        {new Date(log.createdAt).toLocaleString()}
                       </small>
                     </div>
                   ))
@@ -673,250 +834,292 @@ function App() {
               </div>
             )}
 
-            <h2>{selectedBoard.name}</h2>
+            <div className="members-panel">
+              <h3>Workspace Members</h3>
 
-            <h3>Workspace Members</h3>
+              {members.map((member) => (
+                <div className="member-row" key={member.id}>
+                  <div className="member-info">
+                    <strong>{member.name}</strong>
+                    <span>{member.email}</span>
+                  </div>
 
-            {members.map((member) => (
-              <div key={member.id}>
-                {member.name} — {member.email} — {member.role}
+                  <div className="member-role">
 
-                {member.role !== "OWNER" && (
-                  <select
-                    value={member.role}
-                    onChange={async (event) => {
-                      try {
-                        await api.patch(
-                          `/workspaces/${selectedBoard.workspaceId}/members/${member.id}/role`,
-                          {
-                            role: event.target.value,
-                          }
-                        );
-
-                        await loadMembers(selectedBoard.workspaceId);
-                        setMessage("Member role updated");
-                      } catch {
-                        setMessage("Could not update member role");
-                      }
-                    }}
-                  >
-                    <option value="ADMIN">Admin</option>
-                    <option value="MEMBER">Member</option>
-                    <option value="VIEWER">Viewer</option>
-                  </select>
-                )}
-              </div>
-            ))}
-
-            <h3>Invite Member</h3>
-
-            <input
-              type="email"
-              placeholder="Member email"
-              value={inviteEmail}
-              onChange={(event) =>
-                setInviteEmail(event.target.value)
-              }
-            />
-
-            <select
-              value={inviteRole}
-              onChange={(event) =>
-                setInviteRole(event.target.value)
-              }
-            >
-              <option value="MEMBER">Member</option>
-              <option value="ADMIN">Admin</option>
-              <option value="VIEWER">Viewer</option>
-            </select>
-
-            <button
-              onClick={async () => {
-                if (!inviteEmail.trim() || !selectedBoard) {
-                  return;
-                }
-
-                try {
-                  await api.post(
-                    `/workspaces/${selectedBoard.workspaceId}/invites`,
-                    {
-                      email: inviteEmail.trim(),
-                      role: inviteRole,
-                    }
-                  );
-
-                  setInviteEmail("");
-                  setMessage("Invitation created successfully");
-                } catch {
-                  setMessage("Could not create invitation");
-                }
-              }}
-            >
-              Invite
-            </button>
-
-            {selectedBoard.lists.map((list) => (
-              <DroppableList key={list.id} listId={list.id}>
-                <h3>{list.name}</h3>
-
-                <button onClick={() => createTask(list.id)}>
-                  + Add Task
-                </button>
-
-                {list.tasks.map((task) => (
-                  <DraggableTask key={task.id} task={task}>
-                    <div>
-                      <strong>{task.title}</strong>
-
-                      <p>{task.description}</p>
-
+                    {member.role !== "OWNER" && (
                       <select
-                        value={task.assigneeId ?? ""}
+                        value={member.role}
                         onChange={async (event) => {
-                          const assigneeId =
-                            event.target.value || null;
-
                           try {
                             await api.patch(
-                              `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}/assignee`,
+                              `/workspaces/${selectedBoard.workspaceId}/members/${member.id}/role`,
                               {
-                                assigneeId,
+                                role: event.target.value,
                               }
                             );
+
+                            await loadMembers(selectedBoard.workspaceId);
+                            setMessage("Member role updated");
                           } catch {
-                            setMessage(
-                              "Could not assign task"
-                            );
+                            setMessage("Could not update member role");
                           }
                         }}
                       >
-                        <option value="">
-                          Unassigned
-                        </option>
-
-                        {members.map((member) => (
-                          <option
-                            key={member.id}
-                            value={member.id}
-                          >
-                            {member.name} ({member.email})
-                          </option>
-                        ))}
+                        <option value="ADMIN">Admin</option>
+                        <option value="MEMBER">Member</option>
+                        <option value="VIEWER">Viewer</option>
                       </select>
+                    )}
+                  </div>
+                </div>
+              ))}
 
-                      <button
-                        onClick={() => {
-                          const newTitle = window.prompt(
-                            "Enter new task title:",
-                            task.title
-                          );
+            </div>
 
-                          if (
-                            !newTitle ||
-                            !newTitle.trim()
-                          ) {
-                            return;
-                          }
+            <div className="invite-section">
+              <h3>Invite Member</h3>
 
-                          api.patch(
-                            `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}`,
-                            {
-                              title: newTitle.trim(),
-                              version: task.version,
-                            }
-                          );
-                        }}
-                      >
-                        Edit
-                      </button>
+              <div className="invite-controls">
+                <input
+                  type="email"
+                  placeholder="Member email"
+                  value={inviteEmail}
+                  onChange={(event) =>
+                    setInviteEmail(event.target.value)
+                  }
+                />
 
-                      <button
-                        onClick={async () => {
-                          await api.delete(
-                            `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}`
-                          );
-                        }}
-                      >
-                        Delete
-                      </button>
+                <select
+                  value={inviteRole}
+                  onChange={(event) =>
+                    setInviteRole(event.target.value)
+                  }
+                >
+                  <option value="MEMBER">Member</option>
+                  <option value="ADMIN">Admin</option>
+                  <option value="VIEWER">Viewer</option>
+                </select>
 
-                      <button
-                        onClick={async () => {
-                          const currentListIndex =
-                            selectedBoard.lists.findIndex(
-                              (currentList) =>
-                                currentList.id === list.id
-                            );
+                <button
+                  onClick={async () => {
+                    if (!inviteEmail.trim() || !selectedBoard) {
+                      return;
+                    }
 
-                          const nextList =
-                            selectedBoard.lists[
-                            currentListIndex + 1
-                            ];
+                    try {
+                      await api.post(
+                        `/workspaces/${selectedBoard.workspaceId}/invites`,
+                        {
+                          email: inviteEmail.trim(),
+                          role: inviteRole,
+                        }
+                      );
 
-                          if (!nextList) {
-                            return;
-                          }
+                      setInviteEmail("");
+                      setMessage("Invitation created successfully");
+                      setMessageType("success");
 
-                          try {
-                            await api.patch(
-                              `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}/move`,
-                              {
-                                targetListId: nextList.id,
-                                targetPosition:
-                                  nextList.tasks.length + 1,
-                              }
-                            );
-                          } catch {
-                            setMessage(
-                              "Could not move task"
-                            );
-                          }
-                        }}
-                      >
-                        Move Right →
-                      </button>
+                      setTimeout(() => {
+                        statusMessageRef.current?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "center",
+                        });
+                      }, 0);
+                    } catch {
+                      setMessage("Could not create invitation");
+                      setMessageType("error");
 
-                      <button
-                        onClick={async () => {
-                          const currentListIndex =
-                            selectedBoard.lists.findIndex(
-                              (currentList) =>
-                                currentList.id === list.id
-                            );
+                      setTimeout(() => {
+                        statusMessageRef.current?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "center",
+                        });
+                      }, 0);
+                    }
+                  }}
+                >
+                  Invite
+                </button>
+              </div>
+            </div>
 
-                          const previousList =
-                            selectedBoard.lists[
-                            currentListIndex - 1
-                            ];
-
-                          if (!previousList) {
-                            return;
-                          }
-
-                          try {
-                            await api.patch(
-                              `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}/move`,
-                              {
-                                targetListId:
-                                  previousList.id,
-                                targetPosition:
-                                  previousList.tasks.length + 1,
-                              }
-                            );
-                          } catch {
-                            setMessage(
-                              "Could not move task"
-                            );
-                          }
-                        }}
-                      >
-                        ← Move Left
-                      </button>
+            <div className="kanban-board">
+              {selectedBoard.lists.map((list) => (
+                <DroppableList key={list.id} listId={list.id}>
+                  <div className="column-header">
+                    <div className="column-title">
+                      <h3>{list.name}</h3>
+                      <span>{list.tasks.length}</span>
                     </div>
-                  </DraggableTask>
-                ))}
-              </DroppableList>
-            ))}
+
+                    {list.name === "To Do" && (
+                      <button onClick={() => createTask(list.id)}>
+                        + Add Task
+                      </button>
+                    )}
+                  </div>
+
+                  {list.tasks.length === 0 && (
+                    <div className="empty-column">
+                      No tasks yet
+                    </div>
+                  )}
+
+                  {list.tasks.map((task) => (
+                    <DraggableTask key={task.id} task={task}>
+                      <div className="task-card">
+                        <strong className="task-title">{task.title}</strong>
+
+                        <p>{task.description}</p>
+
+                        <select
+                          value={task.assigneeId ?? ""}
+                          onChange={async (event) => {
+                            const assigneeId =
+                              event.target.value || null;
+
+                            try {
+                              await api.patch(
+                                `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}/assignee`,
+                                {
+                                  assigneeId,
+                                }
+                              );
+                            } catch {
+                              setMessage(
+                                "Could not assign task"
+                              );
+                            }
+                          }}
+                        >
+                          <option value="">
+                            Unassigned
+                          </option>
+
+                          {members.map((member) => (
+                            <option
+                              key={member.id}
+                              value={member.id}
+                            >
+                              {member.name} ({member.email})
+                            </option>
+                          ))}
+                        </select>
+
+                        <button
+                          onClick={() => {
+                            const newTitle = window.prompt(
+                              "Enter new task title:",
+                              task.title
+                            );
+
+                            if (
+                              !newTitle ||
+                              !newTitle.trim()
+                            ) {
+                              return;
+                            }
+
+                            api.patch(
+                              `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}`,
+                              {
+                                title: newTitle.trim(),
+                                version: task.version,
+                              }
+                            );
+                          }}
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            await api.delete(
+                              `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}`
+                            );
+                          }}
+                        >
+                          Delete
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            const currentListIndex =
+                              selectedBoard.lists.findIndex(
+                                (currentList) =>
+                                  currentList.id === list.id
+                              );
+
+                            const nextList =
+                              selectedBoard.lists[
+                              currentListIndex + 1
+                              ];
+
+                            if (!nextList) {
+                              return;
+                            }
+
+                            try {
+                              await api.patch(
+                                `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}/move`,
+                                {
+                                  targetListId: nextList.id,
+                                  targetPosition:
+                                    nextList.tasks.length + 1,
+                                }
+                              );
+                            } catch {
+                              setMessage(
+                                "Could not move task"
+                              );
+                            }
+                          }}
+                        >
+                          Move Right →
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            const currentListIndex =
+                              selectedBoard.lists.findIndex(
+                                (currentList) =>
+                                  currentList.id === list.id
+                              );
+
+                            const previousList =
+                              selectedBoard.lists[
+                              currentListIndex - 1
+                              ];
+
+                            if (!previousList) {
+                              return;
+                            }
+
+                            try {
+                              await api.patch(
+                                `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}/move`,
+                                {
+                                  targetListId:
+                                    previousList.id,
+                                  targetPosition:
+                                    previousList.tasks.length + 1,
+                                }
+                              );
+                            } catch {
+                              setMessage(
+                                "Could not move task"
+                              );
+                            }
+                          }}
+                        >
+                          ← Move Left
+                        </button>
+                      </div>
+                    </DraggableTask>
+                  ))}
+                </DroppableList>
+              ))}
+            </div>
           </div>
         </DndContext>
       )}
