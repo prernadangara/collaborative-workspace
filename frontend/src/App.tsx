@@ -525,7 +525,7 @@ function App() {
   async function handleLogout() {
     try {
       await api.post("/auth/logout");
-    } catch (error) {
+    } catch {
       // Continue logging out locally even if the server request fails.
     }
 
@@ -568,9 +568,9 @@ function App() {
       setIsRegistering(false);
 
       await loadWorkspaces();
-    } catch (error: any) {
+    } catch (error: unknown) {
       setMessage(
-        error.response?.data?.message || "Could not create account"
+        error instanceof Error ? error.message : "Could not create account"
       );
       setMessageType("error");
     }
@@ -620,9 +620,9 @@ function App() {
       setShowCreateWorkspace(false);
 
       await loadWorkspaces();
-    } catch (error: any) {
+    } catch (error: unknown) {
       setMessage(
-        error.response?.data?.message || "Could not create workspace"
+        error instanceof Error ? error.message : "Could not create workspace"
       );
       setMessageType("error");
     }
