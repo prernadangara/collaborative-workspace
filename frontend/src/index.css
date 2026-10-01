@@ -315,14 +315,15 @@ select:focus {
 .toolbar button {
     white-space: nowrap;
 }
-.toolbar > button {
+
+.toolbar>button {
     background: var(--accent);
     border-color: var(--accent);
     color: #fff;
     font-weight: 600;
 }
 
-.toolbar > button:hover {
+.toolbar>button:hover {
     background: var(--accent-hover);
     border-color: var(--accent-hover);
 }
@@ -599,6 +600,39 @@ select:focus {
     .invite-section button {
         margin-right: 4px;
     }
+
+    .workspace-header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .workspace-selector {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .activity-item {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .activity-item .activity-timestamp {
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .member-row {
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .member-row .member-role {
+        margin-left: 0;
+    }
+
 }
 
 .empty-column {
@@ -1197,14 +1231,17 @@ select:focus {
     background: #b91c1c !important;
     border-color: #b91c1c !important;
 }
+
 .delete-task-message {
     font-size: 13px;
     line-height: 1.5;
     color: var(--text);
 }
+
 .delete-task-heading {
     margin-bottom: 0;
 }
+
 .delete-task-form {
     padding-top: 14px;
     padding-bottom: 18px;

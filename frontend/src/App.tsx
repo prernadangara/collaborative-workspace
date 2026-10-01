@@ -145,7 +145,7 @@ function ActivityIcon({ action }: { action: string }) {
     );
   }
 
-  if (action === "TASK_CREATED") {
+  if (action === "TASK_CREATED" || action === "WORKSPACE_CREATED") {
     return (
       <svg
         className="activity-icon"
@@ -1003,41 +1003,40 @@ function App() {
         </div>
       )}
 
-      {localStorage.getItem("accessToken") &&
-        (workspaces.length === 0 || showCreateWorkspace) && (
+      {localStorage.getItem("accessToken") && showCreateWorkspace && (
 
-          <div className="create-workspace-overlay">
-            <form
-              className="create-workspace-form"
-              onSubmit={handleCreateWorkspace}
+        <div className="create-workspace-overlay">
+          <form
+            className="create-workspace-form"
+            onSubmit={handleCreateWorkspace}
+          >
+            <h2 className="section-title">Create Your Workspace</h2>
+
+            <input
+              type="text"
+              placeholder="Workspace name"
+              value={workspaceName}
+              onChange={(event) =>
+                setWorkspaceName(event.target.value)
+              }
+            />
+
+            <button type="submit">Create Workspace</button>
+
+            <button
+              type="button"
+              className="cancel-workspace"
+              onClick={() => {
+                setWorkspaceName("");
+                setShowCreateWorkspace(false);
+              }}
             >
-              <h2 className="section-title">Create Your Workspace</h2>
+              Cancel
+            </button>
 
-              <input
-                type="text"
-                placeholder="Workspace name"
-                value={workspaceName}
-                onChange={(event) =>
-                  setWorkspaceName(event.target.value)
-                }
-              />
-
-              <button type="submit">Create Workspace</button>
-
-              <button
-                type="button"
-                className="cancel-workspace"
-                onClick={() => {
-                  setWorkspaceName("");
-                  setShowCreateWorkspace(false);
-                }}
-              >
-                Cancel
-              </button>
-
-            </form>
-          </div>
-        )}
+          </form>
+        </div>
+      )}
 
       {editingTask && (
         <div className="create-workspace-overlay">
@@ -1098,7 +1097,7 @@ function App() {
         </div>
       )}
 
-      {workspaces.length > 0 && (
+      {localStorage.getItem("accessToken") && (
         <div className="workspace-section">
 
           <div className="workspace-header">
@@ -1329,7 +1328,9 @@ function App() {
                                   ? "Task updated"
                                   : log.action === "INVITE_CREATED"
                                     ? "Invite created"
-                                    : log.action}
+                                    : log.action === "WORKSPACE_CREATED"
+                                      ? "Workspace created"
+                                      : log.action}
                         </strong>
 
                       </div>
