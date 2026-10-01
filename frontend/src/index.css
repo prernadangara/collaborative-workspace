@@ -959,6 +959,26 @@ select:focus {
     border-color: var(--accent-hover);
 }
 
+@media (max-width: 600px) {
+    .invite-controls {
+        flex-wrap: wrap;
+    }
+
+    .invite-controls input {
+        flex: 1 1 100%;
+        width: 100%;
+    }
+
+    .invite-controls select {
+        flex: 1;
+        width: auto;
+    }
+
+    .invite-controls button {
+        flex: 0 0 auto;
+    }
+}
+
 .column-title {
     display: flex;
     align-items: center;
