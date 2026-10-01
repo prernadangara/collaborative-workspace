@@ -181,6 +181,26 @@ function ActivityIcon({ action }: { action: string }) {
     );
   }
 
+  if (action === "INVITE_CREATED") {
+    return (
+      <svg
+        className="activity-icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+        <circle cx="9" cy="7" r="4" />
+        <path d="M19 8v6" />
+        <path d="M22 11h-6" />
+      </svg>
+    );
+  }
+
   // TASK_MOVED
   return (
     <svg
@@ -238,6 +258,11 @@ function StatusIcon({ type }: { type: "success" | "error" }) {
 function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [name, setName] = useState("");
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -252,6 +277,21 @@ function App() {
   const [assigneeFilter, setAssigneeFilter] = useState("");
   const [labelFilter, setLabelFilter] = useState("");
   const statusMessageRef = useRef<HTMLParagraphElement>(null);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editTaskTitle, setEditTaskTitle] = useState("");
+  const [deletingTask, setDeletingTask] = useState<Task | null>(null);
+
+  useEffect(() => {
+    if (!message) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setMessage("");
+    }, 3000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [message]);
 
   const [labels, setLabels] = useState<
     { id: string; name: string }[]
@@ -302,6 +342,7 @@ function App() {
       );
     } catch {
       setMessage("Could not move task");
+      setMessageType("error");
     }
   }
 
@@ -311,6 +352,7 @@ function App() {
       setWorkspaces(response.data.workspaces);
     } catch {
       setMessage("Could not load workspaces");
+      setMessageType("error");
     }
   }
 
@@ -337,6 +379,7 @@ function App() {
       );
     } catch {
       setMessage("Could not load workspace members");
+      setMessageType("error");
     }
   }
 
@@ -356,6 +399,7 @@ function App() {
       setShowActivity(true);
     } catch {
       setMessage("Could not load activity");
+      setMessageType("error");
     }
   }
 
@@ -369,6 +413,7 @@ function App() {
 
       if (!firstBoard) {
         setMessage("No boards found");
+        setMessageType("error");
         return;
       }
 
@@ -385,6 +430,7 @@ function App() {
       setLabels(labelResponse.data.labels);
     } catch {
       setMessage("Could not load board");
+      setMessageType("error");
     }
   }
 
@@ -392,7 +438,6 @@ function App() {
     if (!selectedBoard) {
       return;
     }
-
     try {
       const response = await api.get(
         `/workspaces/${selectedBoard.workspaceId}/tasks`,
@@ -426,6 +471,7 @@ function App() {
       });
     } catch {
       setMessage("Could not search tasks");
+      setMessageType("error");
     }
   }
 
@@ -444,6 +490,7 @@ function App() {
       );
     } catch {
       setMessage("Could not create task");
+      setMessageType("error");
     }
   }
 
@@ -472,6 +519,112 @@ function App() {
       await loadWorkspaces();
     } catch {
       setMessage("Invalid email or password");
+      setMessageType("error");
+    }
+  }
+  async function handleLogout() {
+    try {
+      await api.post("/auth/logout");
+    } catch (error) {
+      // Continue logging out locally even if the server request fails.
+    }
+
+    localStorage.removeItem("accessToken");
+    socket.disconnect();
+
+    setWorkspaces([]);
+    setSelectedBoard(null);
+    setMessage("Logged out successfully!");
+    setMessageType("success");
+  }
+  async function handleRegister(event: React.FormEvent) {
+    event.preventDefault();
+
+    try {
+      await api.post("/auth/register", {
+        name,
+        email,
+        password,
+      });
+
+      const response = await api.post("/auth/login", {
+        email,
+        password,
+      });
+
+      localStorage.setItem(
+        "accessToken",
+        response.data.accessToken
+      );
+
+      socket.auth = {
+        token: response.data.accessToken,
+      };
+
+      socket.connect();
+
+      setMessage("Account created successfully!");
+      setMessageType("success");
+      setIsRegistering(false);
+
+      await loadWorkspaces();
+    } catch (error: any) {
+      setMessage(
+        error.response?.data?.message || "Could not create account"
+      );
+      setMessageType("error");
+    }
+  }
+
+  async function handleCreateWorkspace(event: React.FormEvent) {
+    event.preventDefault();
+
+    if (!workspaceName.trim()) {
+      return;
+    }
+
+    try {
+      const workspaceResponse = await api.post("/workspaces", {
+        name: workspaceName.trim(),
+      });
+
+      const workspaceId = workspaceResponse.data.workspace.id;
+
+      const boardResponse = await api.post(
+        `/workspaces/${workspaceId}/boards`,
+        {
+          name: "My Board",
+        }
+      );
+
+      const boardId = boardResponse.data.board.id;
+
+      await api.post(
+        `/workspaces/${workspaceId}/boards/${boardId}/lists`,
+        { name: "To Do" }
+      );
+
+      await api.post(
+        `/workspaces/${workspaceId}/boards/${boardId}/lists`,
+        { name: "In Progress" }
+      );
+
+      await api.post(
+        `/workspaces/${workspaceId}/boards/${boardId}/lists`,
+        { name: "Done" }
+      );
+
+      setMessage("Workspace created successfully!");
+      setMessageType("success");
+      setWorkspaceName("");
+      setShowCreateWorkspace(false);
+
+      await loadWorkspaces();
+    } catch (error: any) {
+      setMessage(
+        error.response?.data?.message || "Could not create workspace"
+      );
+      setMessageType("error");
     }
   }
 
@@ -654,7 +807,14 @@ function App() {
   }, []);
 
   return (
-    <div className="app-shell">
+    <div
+      className={
+        localStorage.getItem("accessToken")
+          ? "app-shell"
+          : "app-shell auth-shell"
+      }
+    >
+
       <div className="brand-header">
         <img
           src={logo}
@@ -662,56 +822,385 @@ function App() {
           className="brand-logo"
         />
         <h1 className="app-title">Collaborative Workspace</h1>
+
+        {localStorage.getItem("accessToken") && (
+          <button
+            type="button"
+            className="logout-button"
+            onClick={handleLogout}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="40"
+              height="40"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#fff"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m16 17 5-5-5-5" />
+              <path d="M21 12H9" />
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            </svg>
+            Logout
+          </button>
+        )}
       </div>
 
+      {message && (
+        <p
+          ref={statusMessageRef}
+          className={`status-message ${messageType}`}
+        >
+          <StatusIcon type={messageType} />
+          <span>{message}</span>
+        </p>
+      )}
+
       {!localStorage.getItem("accessToken") && (
-        <form className="login-form" onSubmit={handleLogin}>
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(event) =>
-              setEmail(event.target.value)
-            }
-          />
+        <div className="auth-card">
+          <div className="auth-heading">
+            <h2>{isRegistering ? "Create an account" : "Welcome back"}</h2>
+            <p>
+              {isRegistering
+                ? "Create your workspace account to get started."
+                : "Sign in to continue to your workspace."}
+            </p>
+          </div>
 
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(event) =>
-              setPassword(event.target.value)
-            }
-          />
+          <form
+            className="login-form"
+            onSubmit={isRegistering ? handleRegister : handleLogin}
+          >
+            {isRegistering && (
+              <div className="auth-field">
+                <label htmlFor="name">NAME</label>
 
-          <button type="submit">Login</button>
-        </form>
+                <input
+                  id="name"
+                  type="text"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
+              </div>
+            )}
+
+            <div className="auth-field">
+              <label htmlFor="email">EMAIL</label>
+
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(event) =>
+                  setEmail(event.target.value)
+                }
+              />
+            </div>
+
+            <div className="auth-field">
+              <div className="password-label-row">
+                <label htmlFor="password">PASSWORD</label>
+
+                <button
+                  type="button"
+                  className="forgot-password"
+                >
+                  Forgot password?
+                </button>
+              </div>
+
+              <div className="password-field">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  id="password"
+                  value={password}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
+                />
+
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() =>
+                    setShowPassword((current) => !current)
+                  }
+                  aria-label={
+                    showPassword ? "Hide password" : "Show password"
+                  }
+                >
+                  {showPassword ? (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+                      <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+                      <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+                      <path d="m2 2 20 20" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={
+                !email.trim() ||
+                !password.trim() ||
+                (isRegistering && !name.trim())
+              }
+            >
+              {isRegistering ? "Create Account" : "Login"}
+            </button>
+          </form>
+
+          <button
+            type="button"
+            className="auth-toggle"
+            onClick={() => {
+              setIsRegistering((current) => !current);
+              setMessage("");
+            }}
+          >
+            {isRegistering ? (
+              <>
+                Already have an account?{" "}
+                <span className="auth-toggle-link">Login</span>
+              </>
+            ) : (
+              <>
+                Don't have an account?{" "}
+                <span className="auth-toggle-link">Register</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {localStorage.getItem("accessToken") &&
+        (workspaces.length === 0 || showCreateWorkspace) && (
+
+          <div className="create-workspace-overlay">
+            <form
+              className="create-workspace-form"
+              onSubmit={handleCreateWorkspace}
+            >
+              <h2 className="section-title">Create Your Workspace</h2>
+
+              <input
+                type="text"
+                placeholder="Workspace name"
+                value={workspaceName}
+                onChange={(event) =>
+                  setWorkspaceName(event.target.value)
+                }
+              />
+
+              <button type="submit">Create Workspace</button>
+
+              <button
+                type="button"
+                className="cancel-workspace"
+                onClick={() => {
+                  setWorkspaceName("");
+                  setShowCreateWorkspace(false);
+                }}
+              >
+                Cancel
+              </button>
+
+            </form>
+          </div>
+        )}
+
+      {editingTask && (
+        <div className="create-workspace-overlay">
+          <form
+            className="create-workspace-form"
+            onSubmit={async (event) => {
+              event.preventDefault();
+
+              const newTitle = editTaskTitle.trim();
+
+              if (!newTitle || !selectedBoard) {
+                return;
+              }
+
+              try {
+                await api.patch(
+                  `/workspaces/${selectedBoard.workspaceId}/tasks/${editingTask.id}`,
+                  {
+                    title: newTitle,
+                    version: editingTask.version,
+                  }
+                );
+
+                setEditingTask(null);
+                setEditTaskTitle("");
+              } catch {
+                setMessage("Could not edit task");
+                setMessageType("error");
+              }
+            }}
+          >
+            <h2 className="section-title">Edit Task</h2>
+
+            <input
+              type="text"
+              value={editTaskTitle}
+              onChange={(event) =>
+                setEditTaskTitle(event.target.value)
+              }
+              autoFocus
+            />
+
+            <button type="submit">
+              Save Changes
+            </button>
+
+            <button
+              type="button"
+              className="cancel-workspace"
+              onClick={() => {
+                setEditingTask(null);
+                setEditTaskTitle("");
+              }}
+            >
+              Cancel
+            </button>
+          </form>
+        </div>
       )}
 
       {workspaces.length > 0 && (
-        <div>
-          <h2 className="section-title">Your Workspaces</h2>
+        <div className="workspace-section">
 
-          <div className="workspace-selector">
-            {workspaces.map((workspace) => (
-              <div key={workspace.id}>
-                <button
-                  onClick={() => loadBoard(workspace.id)}
-                >
-                  {workspace.name}
-                </button>
-              </div>
-            ))}
-            {message && (
-              <p
-                ref={statusMessageRef}
-                className={`status-message ${messageType}`}
+          <div className="workspace-header">
+            <h2 className="section-title">Your Workspaces</h2>
+
+            <div className="workspace-selector">
+              <button
+                type="button"
+                className="create-workspace-action"
+                onClick={() => setShowCreateWorkspace(true)}
               >
-                <StatusIcon type={messageType} />
-                <span>{message}</span>
-              </p>
-            )}
+                + Create Workspace
+              </button>
+              {workspaces.map((workspace) => (
+                <div key={workspace.id}>
+                  <button
+                    className={
+                      selectedBoard?.workspaceId === workspace.id
+                        ? "workspace-button active"
+                        : "workspace-button"
+                    }
+                    onClick={() => loadBoard(workspace.id)}
+                  >
+                    {workspace.name}
+                  </button>
+                </div>
+              ))}
+              {message && (
+                <p
+                  ref={statusMessageRef}
+                  className={`status-message ${messageType}`}
+                >
+                  <StatusIcon type={messageType} />
+                  <span>{message}</span>
+                </p>
+              )}
+            </div>
           </div>
+        </div>
+      )}
+
+      {deletingTask && (
+        <div className="create-workspace-overlay">
+          <form
+            className="create-workspace-form delete-task-form"
+            onSubmit={async (event) => {
+              event.preventDefault();
+
+              if (!selectedBoard) {
+                return;
+              }
+
+              try {
+                await api.delete(
+                  `/workspaces/${selectedBoard.workspaceId}/tasks/${deletingTask.id}`
+                );
+
+                setDeletingTask(null);
+              } catch {
+                setMessage("Could not delete task");
+                setMessageType("error");
+              }
+            }}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="40"
+              height="40"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#dc2626"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="delete-task-icon"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" x2="12" y1="8" y2="12" />
+              <line x1="12" x2="12.01" y1="16" y2="16" />
+            </svg>
+
+            <h2 className="section-title delete-task-heading">Delete Task</h2>
+
+            <p className="delete-task-message">
+              Are you sure you want to delete "{deletingTask.title}"?
+            </p>
+
+            <button type="submit" className="delete-task-button">
+              Delete Task
+            </button>
+
+            <button
+              type="button"
+              className="cancel-workspace"
+              onClick={() => {
+                setDeletingTask(null);
+              }}
+            >
+              Cancel
+            </button>
+          </form>
         </div>
       )}
 
@@ -723,14 +1212,32 @@ function App() {
         >
           <div className="board-content">
             <div className="toolbar">
-              <input
-                type="text"
-                placeholder="Search tasks..."
-                value={searchTerm}
-                onChange={(event) =>
-                  setSearchTerm(event.target.value)
-                }
-              />
+              <div className="task-search-input">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m21 21-4.34-4.34" />
+                  <circle cx="11" cy="11" r="8" />
+                </svg>
+
+                <input
+                  type="text"
+                  placeholder="Search tasks..."
+                  value={searchTerm}
+                  onChange={(event) =>
+                    setSearchTerm(event.target.value)
+                  }
+                />
+              </div>
               <select
                 value={statusFilter}
                 onChange={(event) =>
@@ -820,7 +1327,9 @@ function App() {
                                 ? "Task created"
                                 : log.action === "TASK_UPDATED"
                                   ? "Task updated"
-                                  : log.action}
+                                  : log.action === "INVITE_CREATED"
+                                    ? "Invite created"
+                                    : log.action}
                         </strong>
 
                       </div>
@@ -862,6 +1371,7 @@ function App() {
                             setMessage("Member role updated");
                           } catch {
                             setMessage("Could not update member role");
+                            setMessageType("error");
                           }
                         }}
                       >
@@ -989,6 +1499,7 @@ function App() {
                               setMessage(
                                 "Could not assign task"
                               );
+                              setMessageType("error");
                             }
                           }}
                         >
@@ -1008,35 +1519,16 @@ function App() {
 
                         <button
                           onClick={() => {
-                            const newTitle = window.prompt(
-                              "Enter new task title:",
-                              task.title
-                            );
-
-                            if (
-                              !newTitle ||
-                              !newTitle.trim()
-                            ) {
-                              return;
-                            }
-
-                            api.patch(
-                              `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}`,
-                              {
-                                title: newTitle.trim(),
-                                version: task.version,
-                              }
-                            );
+                            setEditingTask(task);
+                            setEditTaskTitle(task.title);
                           }}
                         >
                           Edit
                         </button>
 
                         <button
-                          onClick={async () => {
-                            await api.delete(
-                              `/workspaces/${selectedBoard.workspaceId}/tasks/${task.id}`
-                            );
+                          onClick={() => {
+                            setDeletingTask(task);
                           }}
                         >
                           Delete
@@ -1072,6 +1564,7 @@ function App() {
                               setMessage(
                                 "Could not move task"
                               );
+                              setMessageType("error");
                             }
                           }}
                         >
@@ -1109,6 +1602,7 @@ function App() {
                               setMessage(
                                 "Could not move task"
                               );
+                              setMessageType("error");
                             }
                           }}
                         >
