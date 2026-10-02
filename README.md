@@ -112,6 +112,16 @@ Current jobs include:
 
 The mailer currently logs email content instead of delivering through an external SMTP provider.
 
+### User Interface
+
+- Email/password login and self-service registration (toggle on the same screen)
+- Workspace creation from the UI, seeded with a default board and lists
+- Logout with token revocation
+- Task creation, inline editing, and deletion with a confirmation step
+- Success/error notifications for key actions
+- Member management and invite flow (email + role) with a visible member list
+- Responsive layout, including a dedicated mobile fix for the invite controls
+
 ---
 
 ## Architecture
@@ -753,7 +763,7 @@ There is currently no rate limiting or account lockout mechanism on authenticati
 
 ### UI Scope
 
-The frontend focuses on the core collaborative workspace experience. Workspace/board/list creation and some administration operations can be performed through the API rather than dedicated UI screens.
+Registration, workspace creation, task CRUD, member invites, and role management are all available from the UI. Board/list reordering and some finer-grained administration (e.g. editing a list's title) are currently faster via the API than through dedicated screens, and are natural next additions.
 
 ### Conflict Resolution
 
@@ -780,4 +790,4 @@ With additional development time, I would:
 
 ## License
 
-This project was created as a technical take-home assignment.
+All rights reserved. This project is for demonstration and portfolio purposes.
